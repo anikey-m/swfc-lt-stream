@@ -1,11 +1,13 @@
 import select
 import socket
 import subprocess
+import struct
+import time
 
 from swfc_lt_stream import net, sampler
 
 
-class Encoder(object):
+class Streamer(object):
     def __init__(self, conf):
         self.conf = conf
         self._reader = None
@@ -23,7 +25,9 @@ class Encoder(object):
         self.sock.bind(('0.0.0.0', conf.port))
         self.sock.setblocking(0)
 
-        self.remain = 0  # self.window_shift
+        # TODO: move to encoder
+        self._remain = self.window_shift
+        self._shift = b''
 
         self._stream = False
 
@@ -42,12 +46,15 @@ class Encoder(object):
     def stream(self):
         self._stream = True
         self._reader = subprocess.Popen(
-            self.conf.cmd, shell=True, stdout=subprocess.PIPE
+            self.conf.cmd, shell=True,
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL
         )
         try:
             while self._stream:
                 self.loop()
             self._reader.wait(timeout=1)
+        except:
+            pass
         finally:
             if self._reader.returncode is None:
                 self._reader.kill()
@@ -62,17 +69,33 @@ class Encoder(object):
 
     def read_packet(self):
         try:
-            t, payload = net.clean_packet(self.sock.read(self.packet_size))
+            t, payload = net.clean_packet(self.sock.recv(self.packet_size))
         except:
             return
 
         if t == net.Packet.disconnect:
             self._stream = False
         elif t == net.Packet.ack:
-            pass
+            w_num, = struct.unpack('!I', payload)
+            if w_num == self.window_number:
+                self._remain = self.window_shift
+                self._shift = b''
 
     def write_packet(self):
-        a = self._reader.stdout.read(10)
-        print(a)
-        if a:
-            self.sock.send(a)
+        packet = self.gen_packet()
+        try:
+            self.sock.send(packet)
+        except:
+            pass
+
+    def gen_packet(self):
+        while self._remain:
+            shift_part = self._reader.stdout.read(self._remain)
+            if not shift_part:
+                time.sleep(0.1)
+                continue
+            self._shift += shift_part
+            self._remain -= len(shift_part)
+
+        self.window = self.window[self.window_shift:] + self._shift
+        return self.window
