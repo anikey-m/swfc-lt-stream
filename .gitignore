@@ -1,0 +1,39 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+env/
+venv/
+build/
+develop-eggs/
+dist/
+eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+*.egg
+.installed.cfg
+
+# pytest-cov
+.cache/
+.coverage
+htmlcov/
+
+
+# Installer logs
+pip-log.txt
+
+# PyCharm
+.idea/
+
+# VIM
+.*.swp
+*~
