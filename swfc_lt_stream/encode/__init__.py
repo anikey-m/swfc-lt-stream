@@ -1,39 +1,117 @@
+import os
 import select
 import socket
-import subprocess
 import struct
-import time
+import subprocess
 
 from swfc_lt_stream import net, sampler
 
 
-class Streamer(object):
-    def __init__(self, conf):
-        self.conf = conf
-        self._reader = None
-        self.packet_size = 1024
+class NoDataException(Exception):
+    pass
+
+
+class Source(object):
+    def __init__(self, cmd):
+        self.cmd = cmd
+        self.proc = None
+
+    def start(self):
+        self.proc = subprocess.Popen(
+            self.cmd, shell=True,
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL
+        )
+
+    def stop(self):
+        if self.proc:
+            self.proc.terminate()
+            try:
+                self.proc.wait(tiemeout=1)
+            except:
+                self.proc.kill()
+            self.proc = None
+
+    def read(self, size):
+        if self.proc is None:
+            raise NoDataException()
+        remain = size
+        buffer = b''
+        while remain:
+            readable, _, _ = select.select([self.proc.stdout.fileno()], [], [])
+            part = os.read(readable[0], remain)
+            if part:
+                remain -= len(part)
+                buffer += part
+            else:
+                if remain:
+                    buffer += bytes(remain)
+                if self.proc.poll() is not None:
+                    self.proc = None
+                break
+        return buffer
+
+    def end(self):
+        return self.proc is None
+
+
+class Encoder(object):
+    def __init__(self, source, conf):
+        self.source = source
 
         self.sampler = sampler.PRNG(conf.window, conf.c, conf.delta)
         self.sampler.set_seed(conf.seed)
 
-        self.window_size = conf.window * conf.chunksize
-        self.window_shift = conf.window_shift * conf.chunksize
-        self.window = bytearray(self.window_size)
+        self.chunk_size = conf.chunksize
+        self.window_size = conf.window
+        self.shift_size = conf.window_shift
+
         self.window_number = 0
+        self.window = [bytearray(self.chunk_size)
+                       for _ in range(self.window_size)]
+
+    def shift(self, window_num=None):
+        if window_num is None or window_num == self.window_number:
+            if self.source.end():
+                raise NoDataException()
+            window = self.window[self.shift_size:]
+            for _ in range(self.shift_size):
+                try:
+                    window.append(bytearray(self.source.read(self.chunk_size)))
+                except NoDataException:
+                    window.append(bytearray(self.chunk_size))
+            self.window = window
+
+    def build_packet(self):
+        blockseed, samples = self.sampler.get_src_blocks()
+        block = bytearray(self.chunk_size)
+        for sample in samples:
+            for i in range(self.chunk_size):
+                block[i] ^= self.window[sample][i]
+        return blockseed, block
+
+    def __enter__(self):
+        self.source.start()
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.source.stop()
+
+
+class Streamer(object):
+    def __init__(self, encoder, port):
+        self.encoder = encoder
+        self.packet_size = 1024
 
         self.sock = socket.socket(type=socket.SOCK_DGRAM)
-        self.sock.bind(('0.0.0.0', conf.port))
+        self.sock.bind(('0.0.0.0', port))
         self.sock.setblocking(0)
 
-        # TODO: move to encoder
-        self._remain = self.window_shift
-        self._shift = b''
-
         self._stream = False
+        self._sl = [self.sock]
+        self._empty = []
 
     def run(self):
         while True:
-            select.select([self.sock], [], [])
+            select.select(self._sl, self._empty, self._empty)
             packet, client = self.sock.recvfrom(self.packet_size)
             try:
                 t, payload = net.clean_packet(packet)
@@ -44,28 +122,15 @@ class Streamer(object):
             self.stream()
 
     def stream(self):
-        self._stream = True
-        self._reader = subprocess.Popen(
-            self.conf.cmd, shell=True,
-            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL
-        )
-        try:
+        with self.encoder:
+            self._stream = True
+            self.encoder.shift()
             while self._stream:
-                self.loop()
-            self._reader.wait(timeout=1)
-        except:
-            pass
-        finally:
-            if self._reader.returncode is None:
-                self._reader.kill()
-
-    def loop(self):
-        read, write, _ = select.select([self.sock], [self.sock], [])
-
-        if read:
-            self.read_packet()
-        if write:
-            self.write_packet()
+                read, write, _ = select.select(self._sl, self._sl, self._empty)
+                if read:
+                    self.read_packet()
+                if write:
+                    self.write_packet()
 
     def read_packet(self):
         try:
@@ -76,26 +141,21 @@ class Streamer(object):
         if t == net.Packet.disconnect:
             self._stream = False
         elif t == net.Packet.ack:
-            w_num, = struct.unpack('!I', payload)
-            if w_num == self.window_number:
-                self._remain = self.window_shift
-                self._shift = b''
+            window_num, = struct.unpack('!I', payload)
+            try:
+                self.encoder.shift(window_num)
+            except NoDataException:
+                self._stream = False
 
     def write_packet(self):
-        packet = self.gen_packet()
+        if not self._stream:
+            packet = net.build_packet(net.Packet.end, b'')
+            self.sock.send(packet)
+            return
+
+        blockseed, block = self.encoder.build_packet()
+        packet = net.build_data_packet(blockseed, block)
         try:
             self.sock.send(packet)
         except:
             pass
-
-    def gen_packet(self):
-        while self._remain:
-            shift_part = self._reader.stdout.read(self._remain)
-            if not shift_part:
-                time.sleep(0.1)
-                continue
-            self._shift += shift_part
-            self._remain -= len(shift_part)
-
-        self.window = self.window[self.window_shift:] + self._shift
-        return self.window

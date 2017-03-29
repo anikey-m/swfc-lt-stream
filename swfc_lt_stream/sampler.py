@@ -90,18 +90,13 @@ class PRNG(object):
 
         self.state = seed
 
-    def get_src_blocks(self, seed=None):
+    def get_src_blocks(self):
         """Returns the indices of a set of `d` source blocks
         sampled from indices i = 1, ..., K-1 uniformly, where
         `d` is sampled from the RSD described above.
         """
-
-        if seed:
-            self.state = seed
-
         blockseed = self.state
         d = self._sample_d()
-        have = 0
         nums = set()
         while len(nums) < d:
             num = self._get_next() % self.K
