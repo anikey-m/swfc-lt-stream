@@ -17,6 +17,11 @@ def build_data_packet(blockseed, block):
     return build_packet(Packet.data, payload)
 
 
+def build_shift_packet(window_num):
+    payload = struct.pack('!I', window_num)
+    return build_packet(Packet.ack, payload)
+
+
 def build_packet(type_, payload):
     crc = functools.reduce(operator.xor, payload, type_)
     packet = struct.pack('!B%dsB' % len(payload), type_, payload, crc)
