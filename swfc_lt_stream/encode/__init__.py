@@ -1,7 +1,6 @@
 import os
 import select
 import socket
-import struct
 import subprocess
 
 from swfc_lt_stream import net, sampler
@@ -88,7 +87,7 @@ class Encoder(object):
         for sample in samples:
             for i in range(self.chunk_size):
                 block[i] ^= self.window[sample][i]
-        return blockseed, block
+        return self.window_number, blockseed, block
 
     def __enter__(self):
         self.source.start()
@@ -142,7 +141,7 @@ class Streamer(object):
         if t == net.Packet.disconnect:
             self._stream = False
         elif t == net.Packet.ack:
-            window_num, = struct.unpack('!I', payload)
+            window_num, = payload
             try:
                 self.encoder.shift(window_num)
             except NoDataException:
@@ -154,8 +153,8 @@ class Streamer(object):
             self.sock.send(packet)
             return
 
-        blockseed, block = self.encoder.build_packet()
-        packet = net.build_data_packet(blockseed, block)
+        window, blockseed, block = self.encoder.build_packet()
+        packet = net.build_data_packet(window, blockseed, block)
         try:
             self.sock.send(packet)
         except:

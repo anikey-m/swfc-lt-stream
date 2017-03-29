@@ -12,8 +12,8 @@ class Packet(enum.IntEnum):
     end = 4
 
 
-def build_data_packet(blockseed, block):
-    payload = struct.pack('!I', blockseed) + block
+def build_data_packet(window, blockseed, block):
+    payload = struct.pack('!II', window, blockseed) + block
     return build_packet(Packet.data, payload)
 
 
@@ -33,4 +33,8 @@ def clean_packet(packet):
     crc = functools.reduce(operator.xor, payload, type_)
     if crc != pack_crc:
         raise ValueError('Invalid packet check sum.')
+    if type_ == Packet.ack:
+        payload = struct.unpack('!I', payload)
+    elif type_ == Packet.data:
+        payload = *struct.unpack('!II', payload[:8]), payload[8:]
     return type_, payload
