@@ -35,9 +35,6 @@ def common_args(parser):
         '-p', '--port', type=int, default=6200,
         help='UDP port for data transmitting.'
     )
-    parser.add_argument(
-        'cmd'
-    )
     return parser
 
 
@@ -45,11 +42,19 @@ def encoder_parser():
     parser = argparse.ArgumentParser(
         description='Encoder/stream server'
     )
-    return common_args(parser)
+    common_args(parser)
+    parser.add_argument(
+        'cmd'
+    )
+    return parser
 
 
 def decoder_parser():
     parser = argparse.ArgumentParser(
         description='Decoder/stream client'
     )
-    return common_args(parser)
+    common_args(parser)
+    parser.add_argument(
+        'host'
+    )
+    return parser

@@ -1,4 +1,5 @@
 import collections
+import time
 import socket
 import select
 import sys
@@ -16,18 +17,18 @@ class Decoder(object):
     def __init__(self, conf):
         self.sampler = sampler.PRNG(conf.window, conf.c, conf.delta)
 
-        self.chunk_size = conf.chunk_size
-        self.window_size = conf.window_size
+        self.chunk_size = conf.chunksize
+        self.window_size = conf.window
         self.shift_size = conf.window_shift
         self.dummy = self.window_size - self.shift_size
 
-        self.window_number = 0
+        self.window_number = None
         self.window = [bytearray(self.chunk_size)
                        for _ in range(self.window_size)]
         self.checks = collections.defaultdict(list)
         self.unknown = set(range(
-            self.window_size - self.chunk_size,
-            self.window_size + 1
+            self.window_size - self.shift_size,
+            self.window_size
         ))
 
     def shift(self):
@@ -42,10 +43,11 @@ class Decoder(object):
             self.dummy -= self.shift_size
             clean_data = []
 
-        self.window = self.window[self.shift_size:] + [None]*self.shift_size
+        self.window = self.window[self.shift_size:]
+        self.window.extend([bytearray(self.chunk_size)] * self.shift_size)
         self.unknown = set(range(
-            self.window_size - self.chunk_size,
-            self.window_size + 1
+            self.window_size - self.shift_size,
+            self.window_size
         ))
 
         for chunk in clean_data:
@@ -53,10 +55,14 @@ class Decoder(object):
 
     def consume(self, window, seed, block):
         if window != self.window_number:
-            return False
+            if self.window_number is None:
+                self.window_number = window
+            else:
+                return window
 
         self.sampler.set_seed(seed)
         _, samples = self.sampler.get_src_blocks()
+        block = bytearray(block)
 
         if len(samples) == 1:
             self.add_block(next(iter(samples)), block)
@@ -65,6 +71,7 @@ class Decoder(object):
                 if sample not in self.unknown:
                     for i in range(self.chunk_size):
                         block[i] ^= self.window[sample][i]
+                    samples.remove(sample)
 
             if len(samples) == 1:
                 self.add_block(next(iter(samples)), block)
@@ -72,7 +79,10 @@ class Decoder(object):
                 check = Node(samples, block)
                 for sample in samples:
                     self.checks[sample].append(check)
-        return not self.unknown
+        if self.unknown:
+            return False
+        else:
+            return self.window_number
 
     def add_block(self, sample, block):
         if sample not in self.unknown:
@@ -107,16 +117,25 @@ class Listener(object):
         self.sock.connect((host, port))
 
     def listen(self):
+        try:
+            self._listen()
+        except:
+            self.sock.send(net.build_packet(net.Packet.disconnect, b''))
+            raise
+
+    def _listen(self):
         while True:
             _, write, _ = select.select([], [self.sock], [])
             self.sock.send(net.build_packet(net.Packet.connect, b''))
             readable, _, _ = select.select([self.sock], [], [], 5)
-            if readable:
+            try:
+                packet = self.sock.recv(self.packet_size)
+            except:
+                time.sleep(5)
+            else:
                 break
 
         while True:
-            readable, _, _ = select.select([self.sock], [], [])
-            packet = self.sock.recv(self.packet_size)
             type_, payload = net.clean_packet(packet)
             if type_ == net.Packet.end:
                 return
@@ -126,3 +145,5 @@ class Listener(object):
                     self.decoder.shift()
                     shift = net.build_shift_packet(done)
                     self.sock.send(shift)
+            readable, _, _ = select.select([self.sock], [], [])
+            packet = self.sock.recv(self.packet_size)

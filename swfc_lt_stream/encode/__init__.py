@@ -109,17 +109,19 @@ class Streamer(object):
         self._sl = [self.sock]
         self._empty = []
 
+        self.client = None
+
     def run(self):
         while True:
             select.select(self._sl, self._empty, self._empty)
-            packet, client = self.sock.recvfrom(self.packet_size)
+            packet, self.client = self.sock.recvfrom(self.packet_size)
             try:
                 t, payload = net.clean_packet(packet)
                 assert t == net.Packet.connect
             except:
                 continue
-            self.sock.connect(client)
             self.stream()
+            self.client = None
 
     def stream(self):
         with self.encoder:
@@ -150,12 +152,12 @@ class Streamer(object):
     def write_packet(self):
         if not self._stream:
             packet = net.build_packet(net.Packet.end, b'')
-            self.sock.send(packet)
+            self.sock.sendto(packet, self.client)
             return
 
         window, blockseed, block = self.encoder.build_packet()
         packet = net.build_data_packet(window, blockseed, block)
         try:
-            self.sock.send(packet)
+            self.sock.sendto(packet, self.client)
         except:
             pass
