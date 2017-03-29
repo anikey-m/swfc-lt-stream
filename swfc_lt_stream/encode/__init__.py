@@ -80,6 +80,7 @@ class Encoder(object):
                 except NoDataException:
                     window.append(bytearray(self.chunk_size))
             self.window = window
+            self.window_number = (self.window_number + 1) % 0xffffffff
 
     def build_packet(self):
         blockseed, samples = self.sampler.get_src_blocks()
