@@ -1,7 +1,101 @@
+import collections
 import socket
 import select
+import sys
 
-from swfc_lt_stream import net
+from swfc_lt_stream import net, sampler
+
+
+class Node(object):
+    def __init__(self, samples, block):
+        self.samples = samples
+        self.block = block
+
+
+class Decoder(object):
+    def __init__(self, conf):
+        self.sampler = sampler.PRNG(conf.window, conf.c, conf.delta)
+
+        self.chunk_size = conf.chunk_size
+        self.window_size = conf.window_size
+        self.shift_size = conf.window_shift
+        self.dummy = self.window_size - self.shift_size
+
+        self.window_number = 0
+        self.window = [bytearray(self.chunk_size)
+                       for _ in range(self.window_size)]
+        self.checks = collections.defaultdict(list)
+        self.unknown = set(range(
+            self.window_size - self.chunk_size,
+            self.window_size + 1
+        ))
+
+    def shift(self):
+        self.window_number = (self.window_number + 1) % 0xffffffff
+
+        if not self.dummy:
+            clean_data = self.window[:self.shift_size]
+        elif self.dummy < self.shift_size:
+            clean_data = self.window_size[self.dummy:self.shift_size]
+            self.dummy = 0
+        else:
+            self.dummy -= self.shift_size
+            clean_data = []
+
+        self.window = self.window[self.shift_size:] + [None]*self.shift_size
+        self.unknown = set(range(
+            self.window_size - self.chunk_size,
+            self.window_size + 1
+        ))
+
+        for chunk in clean_data:
+            sys.stdout.buffer.write(chunk)
+
+    def consume(self, window, seed, block):
+        if window != self.window_number:
+            return False
+
+        self.sampler.set_seed(seed)
+        _, samples = self.sampler.get_src_blocks()
+
+        if len(samples) == 1:
+            self.add_block(next(iter(samples)), block)
+        else:
+            for sample in samples.copy():
+                if sample not in self.unknown:
+                    for i in range(self.chunk_size):
+                        block[i] ^= self.window[sample][i]
+
+            if len(samples) == 1:
+                self.add_block(next(iter(samples)), block)
+            elif len(samples) > 1:
+                check = Node(samples, block)
+                for sample in samples:
+                    self.checks[sample].append(check)
+        return not self.unknown
+
+    def add_block(self, sample, block):
+        if sample not in self.unknown:
+            return
+        shoud_eleminate = list(self.eliminate(sample, block))
+        while shoud_eleminate:
+            sample, block = shoud_eleminate.pop()
+            shoud_eleminate.extend(self.eliminate(sample, block))
+
+    def eliminate(self, sample, block):
+        self.unknown.remove(sample)
+        self.window[sample] = block
+
+        if sample in self.checks:
+            nodes = self.checks.pop(sample)
+
+            for node in nodes:
+                node.samples.remove(sample)
+                for i in range(self.chunk_size):
+                    node.block[i] ^= block[i]
+
+                if len(node.samples) == 1:
+                    yield next(iter(node.samples)), node.block
 
 
 class Listener(object):
@@ -27,7 +121,8 @@ class Listener(object):
             if type_ == net.Packet.end:
                 return
             elif type_ == net.Packet.data:
-                done = self.decoder.consume(payload)
+                done = self.decoder.consume(*payload)
                 if done:
+                    self.decoder.shift()
                     shift = net.build_shift_packet(done)
                     self.sock.send(shift)
