@@ -68,21 +68,21 @@ class Decoder(object):
 
         self.sampler.set_seed(seed)
         _, samples = self.sampler.get_src_blocks()
-        block = bytearray(block)
 
         if len(samples) == 1:
             self.add_block(next(iter(samples)), block)
         else:
+            array = bytearray(block)
             for sample in samples.copy():
                 if sample not in self.unknown:
                     for i in range(self.chunk_size):
-                        block[i] ^= self.window[sample][i]
+                        array[i] ^= self.window[sample][i]
                     samples.remove(sample)
 
             if len(samples) == 1:
-                self.add_block(next(iter(samples)), block)
+                self.add_block(next(iter(samples)), bytes(array))
             elif len(samples) > 1:
-                check = Node(samples, block)
+                check = Node(samples, array)
                 for sample in samples:
                     self.checks[sample].append(check)
         if self.unknown:
@@ -101,7 +101,7 @@ class Decoder(object):
             return
 
         self.unknown.remove(sample)
-        self.window[sample] = bytes(block)
+        self.window[sample] = block
 
         if sample in self.checks:
             nodes = self.checks.pop(sample)
@@ -112,7 +112,7 @@ class Decoder(object):
                     node.block[i] ^= block[i]
 
                 if len(node.samples) == 1:
-                    yield next(iter(node.samples)), node.block
+                    yield next(iter(node.samples)), bytes(node.block)
 
 
 class Listener(object):
