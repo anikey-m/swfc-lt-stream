@@ -3,6 +3,8 @@ import select
 import socket
 import subprocess
 
+import numpy
+
 from swfc_lt_stream import net, sampler
 
 
@@ -18,7 +20,7 @@ class Source(object):
     def start(self):
         self.proc = subprocess.Popen(
             self.cmd, shell=True,
-            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL
+            stdout=subprocess.PIPE
         )
 
     def stop(self):
@@ -65,7 +67,7 @@ class Encoder(object):
         self.shift_size = conf.window_shift
 
         self.window_number = 0
-        self.window = [bytearray(self.chunk_size)
+        self.window = [numpy.zeros(self.chunk_size, dtype=numpy.int8)
                        for _ in range(self.window_size)]
 
     def shift(self, window_num=None):
@@ -75,22 +77,21 @@ class Encoder(object):
             window = self.window[self.shift_size:]
             for _ in range(self.shift_size):
                 try:
-                    window.append(bytearray(self.source.read(self.chunk_size)))
+                    window.append(numpy.frombuffer(self.source.read(self.chunk_size), dtype=numpy.int8))
                 except NoDataException:
-                    window.append(bytearray(self.chunk_size))
+                    window.append(numpy.zeros(self.chunk_size, dtype=numpy.int8))
             self.window = window
             self.window_number = (self.window_number + 1) % 0xffffffff
 
     def build_packet(self):
         blockseed, samples = self.sampler.get_src_blocks()
-        block = bytearray(self.chunk_size)
+        block = numpy.zeros(self.chunk_size, dtype=numpy.int8)
         for sample in samples:
-            for i in range(self.chunk_size):
-                block[i] ^= self.window[sample][i]
-        return self.window_number, blockseed, block
+            block ^= self.window[sample]
+        return self.window_number, blockseed, block.tobytes()
 
     def __enter__(self):
-        self.window = [bytearray(self.chunk_size)
+        self.window = [numpy.zeros(self.chunk_size, dtype=numpy.int8)
                        for _ in range(self.window_size)]
         self.source.start()
 
