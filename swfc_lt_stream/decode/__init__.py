@@ -23,7 +23,7 @@ class Decoder(object):
         self.dummy = self.window_size - self.shift_size
 
         self.window_number = None
-        self.window = [bytearray(self.chunk_size)
+        self.window = [bytes(self.chunk_size)
                        for _ in range(self.window_size)]
         self.checks = collections.defaultdict(list)
         self.unknown = set(range(
@@ -31,7 +31,13 @@ class Decoder(object):
             self.window_size
         ))
 
-    def shift(self):
+    def shift(self, window=None):
+        if type(window) is int:
+            if window < self.window_number:
+                return
+            if window > 0xffffff00 and self.window_size < 0x000000ff:
+                return
+
         self.window_number = (self.window_number + 1) % 0xffffffff
 
         if not self.dummy:
@@ -44,7 +50,7 @@ class Decoder(object):
             clean_data = []
 
         self.window = self.window[self.shift_size:]
-        self.window.extend([bytearray(self.chunk_size)] * self.shift_size)
+        self.window.extend([bytes(self.chunk_size)] * self.shift_size)
         self.unknown = set(range(
             self.window_size - self.shift_size,
             self.window_size
@@ -85,16 +91,17 @@ class Decoder(object):
             return self.window_number
 
     def add_block(self, sample, block):
-        if sample not in self.unknown:
-            return
         shoud_eleminate = list(self.eliminate(sample, block))
         while shoud_eleminate:
             sample, block = shoud_eleminate.pop()
             shoud_eleminate.extend(self.eliminate(sample, block))
 
     def eliminate(self, sample, block):
+        if sample not in self.unknown:
+            return
+
         self.unknown.remove(sample)
-        self.window[sample] = block
+        self.window[sample] = bytes(block)
 
         if sample in self.checks:
             nodes = self.checks.pop(sample)
@@ -142,7 +149,7 @@ class Listener(object):
             elif type_ == net.Packet.data:
                 done = self.decoder.consume(*payload)
                 if done:
-                    self.decoder.shift()
+                    self.decoder.shift(done)
                     shift = net.build_shift_packet(done)
                     self.sock.send(shift)
             readable, _, _ = select.select([self.sock], [], [])
