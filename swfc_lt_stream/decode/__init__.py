@@ -118,7 +118,7 @@ class Decoder(object):
 class Listener(object):
     def __init__(self, host, port, decoder):
         self.decoder = decoder
-        self.packet_size = 1024
+        self.packet_size = 4096
 
         self.sock = socket.socket(type=socket.SOCK_DGRAM)
         self.sock.connect((host, port))

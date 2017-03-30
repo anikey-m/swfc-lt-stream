@@ -102,7 +102,7 @@ class Encoder(object):
 class Streamer(object):
     def __init__(self, encoder, port):
         self.encoder = encoder
-        self.packet_size = 1024
+        self.packet_size = 4096
 
         self.sock = socket.socket(type=socket.SOCK_DGRAM)
         self.sock.bind(('0.0.0.0', port))

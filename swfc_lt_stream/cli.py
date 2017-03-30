@@ -19,15 +19,15 @@ def common_args(parser):
 
     codec_group = parser.add_argument_group('Coder params')
     codec_group.add_argument(
-        '--chunksize', type=int, default=100,
+        '--chunksize', type=int, default=1024,
         help='Size of encoded block in bytes'
     )
     codec_group.add_argument(
-        '--window', type=int, default=20,
+        '--window', type=int, default=40,
         help='Size of window (in chunks)'
     )
     codec_group.add_argument(
-        '--window-shift', type=int, default=10,
+        '--window-shift', type=int, default=40,
         help='Window shift step (in chunks)'
     )
 
