@@ -90,6 +90,8 @@ class Encoder(object):
         return self.window_number, blockseed, block
 
     def __enter__(self):
+        self.window = [bytearray(self.chunk_size)
+                       for _ in range(self.window_size)]
         self.source.start()
 
     def __exit__(self, exc_type, exc_val, exc_tb):
