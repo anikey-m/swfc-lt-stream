@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 from swfc_lt_stream import cli, decode
 
 
