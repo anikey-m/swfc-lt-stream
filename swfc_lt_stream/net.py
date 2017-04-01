@@ -36,5 +36,5 @@ def clean_packet(packet):
     if type_ == Packet.ack:
         payload = struct.unpack('!I', payload)
     elif type_ == Packet.data:
-        payload = *struct.unpack('!II', payload[:8]), payload[8:]
+        payload = struct.unpack('!II%ds' % (len(payload) - 8), payload)
     return type_, payload
