@@ -88,7 +88,7 @@ class Encoder(object):
         block = numpy.zeros(self.chunk_size, dtype=numpy.int8)
         for sample in samples:
             block ^= self.window[sample]
-        return self.window_number, blockseed, block.tobytes()
+        return self.window_number, blockseed, block.tostring()
 
     def __enter__(self):
         self.window = [numpy.zeros(self.chunk_size, dtype=numpy.int8)
