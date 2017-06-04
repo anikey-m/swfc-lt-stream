@@ -45,8 +45,8 @@ class Decoder(object):
                 return
 
         if self._metric:
-            self._metric.write('Done window {}. Data packets: {}. Extra packets: {}.',
-                               self.window_number, self._packets, self._extra)
+            self._metric.write('Done window {}. Data packets: {}. Extra packets: {}.'.format(
+                               self.window_number, self._packets, self._extra))
         self._total_packets += self._packets
         self._total_extra += self._extra
         self._packets = 0
@@ -133,8 +133,8 @@ class Decoder(object):
 
     def stop(self):
         if self._metric:
-            self._metric.write('Total packets {}. Total extra {}.',
-                               self._total_packets, self._total_extra)
+            self._metric.write('Total packets {}. Total extra {}.'.format(
+                                self._total_packets, self._total_extra))
             self._metric.close()
 
 
