@@ -31,12 +31,26 @@ class Decoder(object):
             self.window_size
         ))
 
+        self._metric = conf.metric
+        self._packets = 0
+        self._extra = 0
+        self._total_packets = 0
+        self._total_extra = 0
+
     def shift(self, window=None):
         if type(window) is int:
             if window < self.window_number:
                 return
             if window > 0xffffff00 and self.window_size < 0x000000ff:
                 return
+
+        if self._metric:
+            self._metric.write('Done window {}. Data packets: {}. Extra packets: {}.',
+                               self.window_number, self._packets, self._extra)
+        self._total_packets += self._packets
+        self._total_extra += self._extra
+        self._packets = 0
+        self._extra = 0
 
         self.window_number = (self.window_number + 1) % 0xffffffff
 
@@ -61,10 +75,13 @@ class Decoder(object):
 
     def consume(self, window, seed, block):
         if window != self.window_number:
+            self._extra += 1
             if self.window_number is None:
                 self.window_number = window
             else:
                 return window
+
+        self._packets += 1
 
         self.sampler.set_seed(seed)
         _, samples = self.sampler.get_src_blocks()
@@ -114,6 +131,12 @@ class Decoder(object):
                 if len(node.samples) == 1:
                     yield next(iter(node.samples)), bytes(node.block)
 
+    def stop(self):
+        if self._metric:
+            self._metric.write('Total packets {}. Total extra {}.',
+                               self._total_packets, self._total_extra)
+            self._metric.close()
+
 
 class Listener(object):
     def __init__(self, host, port, decoder):
@@ -128,6 +151,7 @@ class Listener(object):
             self._listen()
         except:
             self.sock.send(net.build_packet(net.Packet.disconnect, b''))
+            self.decoder.stop()
             raise
 
     def _listen(self):

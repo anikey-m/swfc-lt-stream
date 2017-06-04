@@ -35,6 +35,10 @@ def common_args(parser):
         '-p', '--port', type=int, default=6200,
         help='UDP port for data transmitting.'
     )
+    parser.add_argument(
+        '-m', '--metric', type=argparse.FileType('w'),
+        help='Name of log file to write metrics'
+    )
     return parser
 
 

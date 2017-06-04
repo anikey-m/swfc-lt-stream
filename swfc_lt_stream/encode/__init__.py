@@ -82,6 +82,8 @@ class Encoder(object):
                     window.append(numpy.zeros(self.chunk_size, dtype=numpy.int8))
             self.window = window
             self.window_number = (self.window_number + 1) % 0xffffffff
+            return True
+        return False
 
     def build_packet(self):
         blockseed, samples = self.sampler.get_src_blocks()
@@ -100,7 +102,7 @@ class Encoder(object):
 
 
 class Streamer(object):
-    def __init__(self, encoder, port):
+    def __init__(self, encoder, port, metric=None):
         self.encoder = encoder
         self.packet_size = 4096
 
@@ -113,6 +115,9 @@ class Streamer(object):
         self._empty = []
 
         self.client = None
+        self._metric = metric
+        self._packets = 0
+        self._total = 0
 
     def run(self):
         while True:
@@ -127,6 +132,8 @@ class Streamer(object):
             self.client = None
 
     def stream(self):
+        if self._metric:
+            self._metric.write('Start transmit data\n')
         with self.encoder:
             self._stream = True
             self.encoder.shift()
@@ -145,10 +152,19 @@ class Streamer(object):
 
         if t == net.Packet.disconnect:
             self._stream = False
+            if self._metric:
+                self._metric.write(' Last window. Sent packets {}', self._packets)
+                self._metric.write('Finish transition. Total packets: {}', self._total)
+                self._metric.flush()
+                self._total = self._packets = 0
         elif t == net.Packet.ack:
             window_num, = payload
             try:
-                self.encoder.shift(window_num)
+                if self.encoder.shift(window_num):
+                    if self._metric:
+                        self._metric.write('  Done window {}. Sent packets {}',
+                                           window_num, self._packets)
+                    self._packets = 0
             except NoDataException:
                 self._stream = False
 
@@ -162,5 +178,7 @@ class Streamer(object):
         packet = net.build_data_packet(window, blockseed, block)
         try:
             self.sock.sendto(packet, self.client)
+            self._packets += 1
+            self._total += 1
         except:
             pass
