@@ -8,5 +8,5 @@ if __name__ == '__main__':
 
     source = encode.Source(conf.cmd)
     encoder = encode.Encoder(source, conf)
-    server = encode.Streamer(encoder, conf.port)
+    server = encode.Streamer(encoder, conf.port, conf.metric)
     server.run()

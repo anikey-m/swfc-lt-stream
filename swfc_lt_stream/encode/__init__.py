@@ -133,7 +133,7 @@ class Streamer(object):
 
     def stream(self):
         if self._metric:
-            self._metric.write('Start transmit data\n')
+            self._metric.write('Start transmit data\n\n')
         with self.encoder:
             self._stream = True
             self.encoder.shift()
@@ -153,8 +153,8 @@ class Streamer(object):
         if t == net.Packet.disconnect:
             self._stream = False
             if self._metric:
-                self._metric.write(' Last window. Sent packets {}'.format(self._packets))
-                self._metric.write('Finish transition. Total packets: {}'.format(self._total))
+                self._metric.write(' Last window. Sent packets {}\n'.format(self._packets))
+                self._metric.write('Finish transition. Total packets: {}\n'.format(self._total))
                 self._metric.flush()
                 self._total = self._packets = 0
         elif t == net.Packet.ack:
@@ -162,7 +162,7 @@ class Streamer(object):
             try:
                 if self.encoder.shift(window_num):
                     if self._metric:
-                        self._metric.write('  Done window {}. Sent packets {}'.format(
+                        self._metric.write('  Done window {}. Sent packets {}\n'.format(
                                            window_num, self._packets))
                     self._packets = 0
             except NoDataException:
